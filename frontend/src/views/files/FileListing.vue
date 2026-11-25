@@ -274,7 +274,12 @@
                   :to="flatURL(entry)"
                 >
                   <span class="name">
-                    <i class="material-icons">{{ flatIcon(entry) }}</i>
+                    <img
+                      v-if="enableThumbs && isFlatImage(entry)"
+                      v-lazy="flatThumbnailUrl(entry)"
+                      :alt="entry.name"
+                    />
+                    <i v-else class="material-icons">{{ flatIcon(entry) }}</i>
                     {{ entry.name }}
                   </span>
                   <span class="path">{{ relativePath(entry) }}</span>
@@ -508,7 +513,7 @@ import { useFileStore } from "@/stores/file";
 import { useLayoutStore } from "@/stores/layout";
 
 import { users, files as api } from "@/api";
-import { enableExec } from "@/utils/constants";
+import { enableExec, enableThumbs } from "@/utils/constants";
 import * as upload from "@/utils/upload";
 import buttons from "@/utils/buttons";
 import css from "@/utils/css";
@@ -706,10 +711,29 @@ const flatSort = (by: string) => {
   flatAsc.value = by === "name" || by === "path";
 };
 
+const flatImageExtensions = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".svg",
+];
+
+const isFlatImage = (entry: RecursiveEntry): boolean =>
+  !entry.isDir && flatImageExtensions.includes(entry.extension.toLowerCase());
+
+const flatThumbnailUrl = (entry: RecursiveEntry): string =>
+  api.getPreviewURL(
+    { path: entry.path, modified: entry.modified } as Resource,
+    "thumb"
+  );
+
 const flatIcon = (entry: RecursiveEntry) => {
   if (entry.isDir) return "folder";
   const extension = entry.extension.toLowerCase();
-  if ([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"].includes(extension)) {
+  if (flatImageExtensions.includes(extension)) {
     return "insert_photo";
   }
   if ([".mp4", ".mkv", ".avi", ".mov", ".webm"].includes(extension)) {
@@ -1632,6 +1656,15 @@ const handleEmptyAreaClick = (e: MouseEvent) => {
 .flat-row > .name i {
   font-size: 1.5em;
   color: var(--iconPrimary);
+}
+
+.flat-row > .name img {
+  width: 1.5em;
+  height: 1.5em;
+  object-fit: cover;
+  margin-right: 0.4em;
+  vertical-align: middle;
+  border-radius: 2px;
 }
 
 .flat-row > .path,
