@@ -11,16 +11,9 @@ set "GOPROXY=https://goproxy.cn,direct"
 echo [1/2] Building frontend...
 cd /d "%ROOT%frontend"
 if errorlevel 1 goto :fail
-if exist "node_modules\.pnpm" (
-  echo Removing pnpm-style node_modules...
-  rmdir /s /q "node_modules"
-  if errorlevel 1 goto :fail
-)
-call npm install --no-package-lock
+call pnpm install --frozen-lockfile
 if errorlevel 1 goto :fail
-call npm run typecheck
-if errorlevel 1 goto :fail
-call npx vite build
+call pnpm run build
 if errorlevel 1 goto :fail
 
 echo [2/2] Building android/arm64 binary...
