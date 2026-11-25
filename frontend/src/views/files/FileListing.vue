@@ -139,7 +139,11 @@
       </h2>
     </div>
     <template v-else>
-      <div v-if="flatMode" id="flat-listing">
+      <div
+        v-if="flatMode"
+        id="flat-listing"
+        :style="{ '--flat-thumb-size': `${flatThumbSize}px` }"
+      >
         <div class="flat-filters">
           <input
             v-model.trim="flatFilter.query"
@@ -148,6 +152,15 @@
             :aria-label="t('search.search')"
             @keyup.enter="fetchFlat"
           />
+          <select
+            v-if="enableThumbs"
+            v-model="flatThumbSize"
+            :aria-label="t('files.flat.thumbSize')"
+          >
+            <option v-for="size in flatThumbSizes" :key="size" :value="size">
+              {{ size }}
+            </option>
+          </select>
           <select
             v-model="flatFilter.type"
             :aria-label="t('files.flat.allTypes')"
@@ -536,6 +549,7 @@ import {
   onMounted,
   reactive,
   ref,
+  shallowRef,
   watch,
 } from "vue";
 import { useRoute, onBeforeRouteUpdate } from "vue-router";
@@ -550,9 +564,11 @@ interface FlatItem {
   timeKey: number;
 }
 
+// Kept at module level so leaving the listing for a preview and coming back
+// restores the same view without another full walk.
 const flatMode = ref<boolean>(false);
-const flatRaw = ref<FlatItem[]>([]);
-const flatEntries = ref<RecursiveEntry[]>([]);
+const flatRaw = shallowRef<FlatItem[]>([]);
+const flatEntries = shallowRef<RecursiveEntry[]>([]);
 const flatLoading = ref<boolean>(false);
 const flatSortBy = ref<string>("name");
 const flatAsc = ref<boolean>(true);
@@ -565,7 +581,21 @@ const flatFilter = reactive({
   after: "",
   before: "",
 });
+const flatThumbSize = ref<number>(40);
+const flatScrollTop = ref(0);
+const flatCache = new Map<string, FlatItem[]>();
 let flatController = new AbortController();
+
+const flatCacheKey = (path: string): string =>
+  JSON.stringify([
+    path,
+    flatFilter.query,
+    flatFilter.type,
+    toBytes(flatFilter.minSize, flatFilter.sizeUnit),
+    toBytes(flatFilter.maxSize, flatFilter.sizeUnit),
+    flatFilter.after,
+    flatFilter.before,
+  ]);
 
 const sizeUnits: Record<string, number> = {
   B: 1,
@@ -614,12 +644,19 @@ const applyFlatSort = () => {
   flatEntries.value = [...flatRaw.value].sort(compareFlat).map((item) => item.entry);
 };
 
-const flushFlat = throttle(applyFlatSort, 100);
+let pendingFlat: FlatItem[] = [];
 
-const flatRowHeight = 40;
+const flushPending = throttle(() => {
+  if (pendingFlat.length === 0) return;
+  flatRaw.value = flatRaw.value.concat(pendingFlat);
+  pendingFlat = [];
+  applyFlatSort();
+}, 1000);
+
+const flatThumbSizes = [24, 40, 64];
+const flatRowHeight = computed(() => flatThumbSize.value + 16);
 const flatOverscan = 6;
 const flatScroll = ref<HTMLElement | null>(null);
-const flatScrollTop = ref(0);
 const flatViewportHeight = ref(window.innerHeight - 220);
 
 const onFlatScroll = (event: Event) => {
@@ -627,23 +664,35 @@ const onFlatScroll = (event: Event) => {
 };
 
 const flatStartIndex = computed(() =>
-  Math.max(0, Math.floor(flatScrollTop.value / flatRowHeight) - flatOverscan)
+  Math.max(0, Math.floor(flatScrollTop.value / flatRowHeight.value) - flatOverscan)
 );
 
 const visibleFlatEntries = computed(() => {
   const count =
-    Math.ceil(flatViewportHeight.value / flatRowHeight) + flatOverscan * 2;
+    Math.ceil(flatViewportHeight.value / flatRowHeight.value) + flatOverscan * 2;
   return flatEntries.value.slice(flatStartIndex.value, flatStartIndex.value + count);
 });
 
-const flatOffsetY = computed(() => flatStartIndex.value * flatRowHeight);
-const flatTotalHeight = computed(() => flatEntries.value.length * flatRowHeight);
+const flatOffsetY = computed(() => flatStartIndex.value * flatRowHeight.value);
+const flatTotalHeight = computed(() => flatEntries.value.length * flatRowHeight.value);
 
 const fetchFlat = async () => {
   flatController.abort();
   const controller = new AbortController();
   flatController = controller;
-  flushFlat.cancel();
+  flushPending.cancel();
+  pendingFlat = [];
+
+  const key = flatCacheKey(route.path);
+  const cached = flatCache.get(key);
+  if (cached) {
+    flatRaw.value = cached;
+    flatScrollTop.value = 0;
+    applyFlatSort();
+    flatLoading.value = false;
+    return;
+  }
+
   flatRaw.value = [];
   flatEntries.value = [];
   flatScrollTop.value = 0;
@@ -662,17 +711,24 @@ const fetchFlat = async () => {
       },
       (entry) => {
         if (flatController !== controller) return;
-        flatRaw.value.push({
+        pendingFlat.push({
           entry,
           nameKey: naturalKey(entry.name),
           pathKey: naturalKey(entry.path),
           timeKey: Date.parse(entry.modified),
         });
-        flushFlat();
+        flushPending();
       },
       controller.signal
     );
-    if (flatController === controller) applyFlatSort();
+    if (flatController === controller) {
+      if (pendingFlat.length > 0) {
+        flatRaw.value = flatRaw.value.concat(pendingFlat);
+        pendingFlat = [];
+      }
+      flatCache.set(key, flatRaw.value);
+      applyFlatSort();
+    }
   } catch (e: any) {
     if (e?.is_canceled) return;
     $showError(e);
@@ -711,18 +767,7 @@ const flatSort = (by: string) => {
   flatAsc.value = by === "name" || by === "path";
 };
 
-const flatImageExtensions = [
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".gif",
-  ".webp",
-  ".bmp",
-  ".svg",
-];
-
-const isFlatImage = (entry: RecursiveEntry): boolean =>
-  !entry.isDir && flatImageExtensions.includes(entry.extension.toLowerCase());
+const isFlatImage = (entry: RecursiveEntry): boolean => entry.type === "image";
 
 const flatThumbnailUrl = (entry: RecursiveEntry): string =>
   api.getPreviewURL(
@@ -731,19 +776,20 @@ const flatThumbnailUrl = (entry: RecursiveEntry): string =>
   );
 
 const flatIcon = (entry: RecursiveEntry) => {
-  if (entry.isDir) return "folder";
-  const extension = entry.extension.toLowerCase();
-  if (flatImageExtensions.includes(extension)) {
-    return "insert_photo";
+  switch (entry.type) {
+    case "dir":
+      return "folder";
+    case "image":
+      return "insert_photo";
+    case "video":
+      return "movie";
+    case "audio":
+      return "volume_up";
+    case "pdf":
+      return "picture_as_pdf";
+    default:
+      return "insert_drive_file";
   }
-  if ([".mp4", ".mkv", ".avi", ".mov", ".webm"].includes(extension)) {
-    return "movie";
-  }
-  if ([".mp3", ".flac", ".wav", ".ogg", ".m4a"].includes(extension)) {
-    return "volume_up";
-  }
-  if (extension === ".pdf") return "picture_as_pdf";
-  return "insert_drive_file";
 };
 
 const flatURL = (entry: RecursiveEntry) =>
@@ -770,7 +816,7 @@ const authStore = useAuthStore();
 const fileStore = useFileStore();
 const layoutStore = useLayoutStore();
 
-const { req } = storeToRefs(fileStore);
+const { req, reload } = storeToRefs(fileStore);
 
 const route = useRoute();
 onBeforeRouteUpdate(() => {
@@ -782,6 +828,15 @@ watch(flatFilter, () => {
 }, { deep: true });
 
 watch(() => route.path, () => {
+  if (flatMode.value) fetchFlat();
+});
+
+watch(reload, (value) => {
+  if (!value) return;
+  const prefix = JSON.stringify(route.path) + ",";
+  for (const key of flatCache.keys()) {
+    if (key.startsWith(prefix)) flatCache.delete(key);
+  }
   if (flatMode.value) fetchFlat();
 });
 
@@ -957,7 +1012,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   debouncedFetchFlat.cancel();
-  flushFlat.cancel();
+  flushPending.cancel();
+  pendingFlat = [];
   flatController.abort();
 
   // Remove event listeners before destroying this page.
@@ -1612,7 +1668,7 @@ const handleEmptyAreaClick = (e: MouseEvent) => {
   grid-template-columns: minmax(10em, 2fr) minmax(10em, 2fr) 7em 12em;
   gap: 0.5em;
   align-items: center;
-  height: 40px;
+  height: calc(var(--flat-thumb-size, 40px) + 16px);
   box-sizing: border-box;
   padding: 0 0.75em;
   border-bottom: 1px solid var(--divider);
@@ -1659,8 +1715,8 @@ const handleEmptyAreaClick = (e: MouseEvent) => {
 }
 
 .flat-row > .name img {
-  width: 1.5em;
-  height: 1.5em;
+  width: var(--flat-thumb-size, 40px);
+  height: var(--flat-thumb-size, 40px);
   object-fit: cover;
   margin-right: 0.4em;
   vertical-align: middle;

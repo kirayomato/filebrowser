@@ -240,16 +240,12 @@ func (i *FileInfo) detectType(modify, saveContent, readHeader bool, calcImgRes b
 		}
 	}
 
-	switch {
-	case strings.HasPrefix(mimetype, "video"):
-		i.Type = "video"
+	i.Type = typeFromMIME(mimetype, buffer, i.Size, modify)
+
+	switch i.Type {
+	case "video":
 		i.detectSubtitles()
-		return nil
-	case strings.HasPrefix(mimetype, "audio"):
-		i.Type = "audio"
-		return nil
-	case strings.HasPrefix(mimetype, "image"):
-		i.Type = "image"
+	case "image":
 		if calcImgRes {
 			resolution, err := calculateImageResolution(i.Fs, i.Path)
 			if err != nil {
@@ -258,17 +254,7 @@ func (i *FileInfo) detectType(modify, saveContent, readHeader bool, calcImgRes b
 				i.Resolution = resolution
 			}
 		}
-		return nil
-	case strings.HasSuffix(mimetype, "pdf"):
-		i.Type = "pdf"
-		return nil
-	case (strings.HasPrefix(mimetype, "text") || !isBinary(buffer)) && i.Size <= 10*1024*1024: // 10 MB
-		i.Type = "text"
-
-		if !modify {
-			i.Type = "textImmutable"
-		}
-
+	case "text", "textImmutable":
 		if saveContent {
 			afs := &afero.Afero{Fs: i.Fs}
 			content, err := afs.ReadFile(i.Path)
@@ -278,12 +264,48 @@ func (i *FileInfo) detectType(modify, saveContent, readHeader bool, calcImgRes b
 
 			i.Content = string(content)
 		}
-		return nil
-	default:
-		i.Type = "blob"
 	}
 
 	return nil
+}
+
+func typeFromMIME(mimetype string, buffer []byte, size int64, modify bool) string {
+	switch {
+	case strings.HasPrefix(mimetype, "video"):
+		return "video"
+	case strings.HasPrefix(mimetype, "audio"):
+		return "audio"
+	case strings.HasPrefix(mimetype, "image"):
+		return "image"
+	case strings.HasSuffix(mimetype, "pdf"):
+		return "pdf"
+	case (strings.HasPrefix(mimetype, "text") || !isBinary(buffer)) && size <= 10*1024*1024: // 10 MB
+		if !modify {
+			return "textImmutable"
+		}
+		return "text"
+	default:
+		return "blob"
+	}
+}
+
+// DetectType determines a file's resource type without the side effects of
+// subtitle detection or resolution calculation.
+func DetectType(file *FileInfo, readHeader, modify bool) string {
+	if IsNamedPipe(file.Mode) {
+		return "blob"
+	}
+
+	mimetype := mime.TypeByExtension(file.Extension)
+	if mimetype == "" && readHeader {
+		buffer := file.readFirstBytes()
+		if file.Type == "blob" {
+			return "blob"
+		}
+		mimetype = http.DetectContentType(buffer)
+	}
+
+	return typeFromMIME(mimetype, nil, file.Size, modify)
 }
 
 func calculateImageResolution(fSys afero.Fs, filePath string) (*ImageResolution, error) {

@@ -88,6 +88,7 @@ interface RecursiveEntry {
   modified: string;
   isDir: boolean;
   extension: string;
+  type: string;
 }
 
 interface RecursiveQuery {

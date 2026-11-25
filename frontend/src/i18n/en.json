@@ -101,6 +101,7 @@
     "fileEncoding": "File Encoding",
     "flat": {
       "allTypes": "All types",
+      "thumbSize": "Thumbnail size",
       "path": "Path",
       "minSize": "Min size",
       "maxSize": "Max size",

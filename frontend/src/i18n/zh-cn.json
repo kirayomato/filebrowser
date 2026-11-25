@@ -101,6 +101,7 @@
     "fileEncoding": "文件编码",
     "flat": {
       "allTypes": "所有类型",
+      "thumbSize": "缩略图大小",
       "path": "路径",
       "minSize": "最小",
       "maxSize": "最大",

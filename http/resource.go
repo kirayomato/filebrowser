@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -440,6 +439,7 @@ type RecursiveEntry struct {
 	ModTime   time.Time `json:"modified"`
 	IsDir     bool      `json:"isDir"`
 	Extension string    `json:"extension"`
+	Type      string    `json:"type"`
 }
 
 // recursiveFilter holds the optional filtering and ordering of a recursive listing.
@@ -523,9 +523,9 @@ func (f *recursiveFilter) matchType(entry RecursiveEntry) bool {
 		if prefix == "music" {
 			prefix = "audio"
 		}
-		return strings.HasPrefix(mime.TypeByExtension(entry.Extension), prefix)
+		return entry.Type == prefix
 	case "pdf":
-		return strings.EqualFold(entry.Extension, ".pdf")
+		return entry.Type == "pdf"
 	default:
 		return strings.EqualFold(entry.Extension, "."+strings.TrimPrefix(f.typ, "."))
 	}
@@ -710,6 +710,7 @@ var resourceGetRecursiveHandler = withUser(func(w http.ResponseWriter, r *http.R
 			return nil
 		}
 
+		extension := filepath.Ext(info.Name())
 		entry := RecursiveEntry{
 			// afero.Walk joins paths with the OS separator, so on Windows fPath
 			// uses backslashes. The web API contract is forward slashes, so
@@ -719,7 +720,19 @@ var resourceGetRecursiveHandler = withUser(func(w http.ResponseWriter, r *http.R
 			Size:      info.Size(),
 			ModTime:   info.ModTime(),
 			IsDir:     info.IsDir(),
-			Extension: filepath.Ext(info.Name()),
+			Extension: extension,
+		}
+		if !entry.IsDir {
+			entry.Type = files.DetectType(&files.FileInfo{
+				Fs:        d.user.Fs,
+				Path:      fPath,
+				Name:      info.Name(),
+				Size:      info.Size(),
+				Mode:      info.Mode(),
+				Extension: extension,
+			}, d.server.TypeDetectionByHeader, d.user.Perm.Modify)
+		} else {
+			entry.Type = "dir"
 		}
 		if !filter.match(entry, root) {
 			return nil
