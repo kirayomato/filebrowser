@@ -40,6 +40,8 @@
     "shell": "切换终端",
     "submit": "提交",
     "switchView": "切换视图",
+    "flatView": "平铺列表",
+    "treeView": "树形列表",
     "toggleSidebar": "切换侧边栏",
     "update": "更新",
     "upload": "上传",
@@ -96,7 +98,17 @@
       "semicolon": "分号 (;)",
       "both": "逗号 (,) 和分号 (;)"
     },
-    "fileEncoding": "文件编码"
+    "fileEncoding": "文件编码",
+    "flat": {
+      "allTypes": "所有类型",
+      "path": "路径",
+      "minSize": "最小",
+      "maxSize": "最大",
+      "after": "修改时间起",
+      "before": "修改时间止",
+      "count": "个结果",
+      "empty": "没有匹配的文件"
+    }
   },
   "help": {
     "click": "选中文件或文件夹",

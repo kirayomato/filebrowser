@@ -40,6 +40,8 @@
     "shell": "Toggle shell",
     "submit": "Submit",
     "switchView": "Switch view",
+    "flatView": "Flat list",
+    "treeView": "Tree view",
     "toggleSidebar": "Toggle sidebar",
     "update": "Update",
     "upload": "Upload",
@@ -96,7 +98,17 @@
       "semicolon": "Semicolon (;)",
       "both": "Both (,) and (;)"
     },
-    "fileEncoding": "File Encoding"
+    "fileEncoding": "File Encoding",
+    "flat": {
+      "allTypes": "All types",
+      "path": "Path",
+      "minSize": "Min size",
+      "maxSize": "Max size",
+      "after": "Modified after",
+      "before": "Modified before",
+      "count": "results",
+      "empty": "No matching files"
+    }
   },
   "help": {
     "click": "select file or directory",

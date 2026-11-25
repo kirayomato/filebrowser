@@ -49,10 +49,73 @@ export async function fetch(url: string, signal?: AbortSignal) {
   return data;
 }
 
-export async function fetchAll(url: string): Promise<RecursiveEntry[]> {
+function recursiveQuery(params: RecursiveQuery, stream = false): string {
+  const search = new URLSearchParams();
+  if (stream) search.set("stream", "true");
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") {
+      search.set(key, String(value));
+    }
+  }
+  return search.toString();
+}
+
+export async function fetchAll(
+  url: string,
+  params: RecursiveQuery = {},
+  signal?: AbortSignal
+): Promise<RecursiveEntry[]> {
   url = removePrefix(url);
-  const res = await fetchURL(`/api/resources/recursive${url}`, {});
+  const query = recursiveQuery(params);
+  const res = await fetchURL(
+    `/api/resources/recursive${url}${query ? `?${query}` : ""}`,
+    { signal }
+  );
   return (await res.json()) as RecursiveEntry[];
+}
+
+export async function fetchAllStream(
+  url: string,
+  params: RecursiveQuery,
+  onEntry: (entry: RecursiveEntry) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  url = removePrefix(url);
+  const query = recursiveQuery(params, true);
+  const res = await fetchURL(
+    `/api/resources/recursive${url}${query ? `?${query}` : ""}`,
+    { signal }
+  );
+
+  if (!res.headers.get("Content-Type")?.includes("ndjson")) {
+    const entries = (await res.json()) as RecursiveEntry[];
+    entries.forEach(onEntry);
+    return;
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("Streaming response has no body");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim()) onEntry(JSON.parse(line) as RecursiveEntry);
+      }
+    }
+    if (buffer.trim()) onEntry(JSON.parse(buffer) as RecursiveEntry);
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new StatusError("000 No connection", 0, true);
+    }
+    throw e;
+  }
 }
 
 async function resourceAction(url: string, method: ApiMethod, content?: any) {

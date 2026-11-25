@@ -87,4 +87,16 @@ interface RecursiveEntry {
   size: number;
   modified: string;
   isDir: boolean;
+  extension: string;
+}
+
+interface RecursiveQuery {
+  query?: string;
+  type?: string;
+  minSize?: number;
+  maxSize?: number;
+  after?: string;
+  before?: string;
+  sortBy?: string;
+  asc?: boolean;
 }

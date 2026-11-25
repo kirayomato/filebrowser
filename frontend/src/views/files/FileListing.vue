@@ -59,6 +59,11 @@
           @action="switchView"
         />
         <action
+          :icon="flatMode ? 'account_tree' : 'view_list'"
+          :label="flatMode ? t('buttons.treeView') : t('buttons.flatView')"
+          @action="toggleFlat"
+        />
+        <action
           v-if="headerButtons.download"
           icon="file_download"
           :label="t('buttons.download')"
@@ -134,8 +139,165 @@
       </h2>
     </div>
     <template v-else>
+      <div v-if="flatMode" id="flat-listing">
+        <div class="flat-filters">
+          <input
+            v-model.trim="flatFilter.query"
+            type="text"
+            :placeholder="t('search.search')"
+            :aria-label="t('search.search')"
+            @keyup.enter="fetchFlat"
+          />
+          <select
+            v-model="flatFilter.type"
+            :aria-label="t('files.flat.allTypes')"
+          >
+            <option value="">{{ t("files.flat.allTypes") }}</option>
+            <option value="dir">{{ t("files.folders") }}</option>
+            <option value="file">{{ t("files.files") }}</option>
+            <option value="image">{{ t("search.images") }}</option>
+            <option value="audio">{{ t("search.music") }}</option>
+            <option value="video">{{ t("search.video") }}</option>
+            <option value="pdf">PDF</option>
+          </select>
+          <input
+            v-model.number="flatFilter.minSize"
+            class="flat-size"
+            type="number"
+            min="0"
+            :placeholder="t('files.flat.minSize')"
+            :aria-label="t('files.flat.minSize')"
+          />
+          <span class="flat-dash">-</span>
+          <input
+            v-model.number="flatFilter.maxSize"
+            class="flat-size"
+            type="number"
+            min="0"
+            :placeholder="t('files.flat.maxSize')"
+            :aria-label="t('files.flat.maxSize')"
+          />
+          <select v-model="flatFilter.sizeUnit" aria-label="unit">
+            <option value="B">B</option>
+            <option value="KB">KB</option>
+            <option value="MB">MB</option>
+            <option value="GB">GB</option>
+          </select>
+          <input
+            v-model="flatFilter.after"
+            type="date"
+            :title="t('files.flat.after')"
+            :aria-label="t('files.flat.after')"
+          />
+          <input
+            v-model="flatFilter.before"
+            type="date"
+            :title="t('files.flat.before')"
+            :aria-label="t('files.flat.before')"
+          />
+          <button
+            class="action"
+            :title="t('buttons.clear')"
+            :aria-label="t('buttons.clear')"
+            @click="resetFlatFilter"
+          >
+            <i class="material-icons">clear</i>
+          </button>
+        </div>
+
+        <div class="item header flat-row">
+          <p
+            :class="{ active: nameSorted }"
+            class="name"
+            role="button"
+            tabindex="0"
+            @click="sort('name')"
+            :title="t('files.sortByName')"
+          >
+            <span>{{ t("files.name") }}</span>
+            <i class="material-icons">{{ nameIcon }}</i>
+          </p>
+          <p
+            :class="{ active: pathSorted }"
+            class="path"
+            role="button"
+            tabindex="0"
+            @click="sort('path')"
+            :title="t('files.flat.path')"
+          >
+            <span>{{ t("files.flat.path") }}</span>
+            <i class="material-icons">{{ pathIcon }}</i>
+          </p>
+          <p
+            :class="{ active: sizeSorted }"
+            class="size"
+            role="button"
+            tabindex="0"
+            @click="sort('size')"
+            :title="t('files.sortBySize')"
+          >
+            <span>{{ t("files.size") }}</span>
+            <i class="material-icons">{{ sizeIcon }}</i>
+          </p>
+          <p
+            :class="{ active: modifiedSorted }"
+            class="modified"
+            role="button"
+            tabindex="0"
+            @click="sort('modified')"
+            :title="t('files.sortByLastModified')"
+          >
+            <span>{{ t("files.lastModified") }}</span>
+            <i class="material-icons">{{ modifiedIcon }}</i>
+          </p>
+        </div>
+
+        <p v-if="flatLoading && flatEntries.length === 0" class="message">
+          {{ t("files.loading") }}
+        </p>
+        <template v-else>
+          <div
+            v-if="flatEntries.length > 0"
+            ref="flatScroll"
+            class="flat-scroll"
+            @scroll.passive="onFlatScroll"
+          >
+            <div class="flat-spacer" :style="{ height: `${flatTotalHeight}px` }">
+              <div
+                class="flat-window"
+                :style="{ transform: `translateY(${flatOffsetY}px)` }"
+              >
+                <router-link
+                  v-for="entry in visibleFlatEntries"
+                  :key="entry.path"
+                  class="item flat-row"
+                  :to="flatURL(entry)"
+                >
+                  <span class="name">
+                    <i class="material-icons">{{ flatIcon(entry) }}</i>
+                    {{ entry.name }}
+                  </span>
+                  <span class="path">{{ relativePath(entry) }}</span>
+                  <span class="size">
+                    {{ entry.isDir ? "—" : filesize(entry.size) }}
+                  </span>
+                  <span class="modified">
+                    <time :datetime="entry.modified">
+                      {{ dayjs(entry.modified).format("L LT") }}
+                    </time>
+                  </span>
+                </router-link>
+              </div>
+            </div>
+          </div>
+          <p v-if="flatEntries.length === 0" class="message flat-empty">
+            {{ t("files.flat.empty") }}
+          </p>
+        </template>
+        <p class="flat-count">{{ flatEntries.length }} {{ t("files.flat.count") }}</p>
+      </div>
       <div
-        v-if="
+        v-else-if="
           (fileStore.req?.numDirs ?? 0) + (fileStore.req?.numFiles ?? 0) == 0
         "
       >
@@ -350,8 +512,11 @@ import { enableExec } from "@/utils/constants";
 import * as upload from "@/utils/upload";
 import buttons from "@/utils/buttons";
 import css from "@/utils/css";
-import { throttle } from "lodash-es";
+import { filesize } from "@/utils";
+import dayjs from "dayjs";
+import { debounce, throttle } from "lodash-es";
 import { Base64 } from "js-base64";
+import { encodePath } from "@/utils/url";
 
 import HeaderBar from "@/components/header/HeaderBar.vue";
 import Action from "@/components/header/Action.vue";
@@ -364,6 +529,7 @@ import {
   nextTick,
   onBeforeUnmount,
   onMounted,
+  reactive,
   ref,
   watch,
 } from "vue";
@@ -371,6 +537,199 @@ import { useRoute, onBeforeRouteUpdate } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { storeToRefs } from "pinia";
 import { removePrefix } from "@/api/utils";
+
+interface FlatItem {
+  entry: RecursiveEntry;
+  nameKey: string;
+  pathKey: string;
+  timeKey: number;
+}
+
+const flatMode = ref<boolean>(false);
+const flatRaw = ref<FlatItem[]>([]);
+const flatEntries = ref<RecursiveEntry[]>([]);
+const flatLoading = ref<boolean>(false);
+const flatSortBy = ref<string>("name");
+const flatAsc = ref<boolean>(true);
+const flatFilter = reactive({
+  query: "",
+  type: "",
+  minSize: "" as number | string,
+  maxSize: "" as number | string,
+  sizeUnit: "MB",
+  after: "",
+  before: "",
+});
+let flatController = new AbortController();
+
+const sizeUnits: Record<string, number> = {
+  B: 1,
+  KB: 1024,
+  MB: 1024 * 1024,
+  GB: 1024 * 1024 * 1024,
+};
+
+const toBytes = (value: number | string, unit: string): number | undefined => {
+  if (value === "" || value === null || value === undefined) return undefined;
+  const size = Number(value);
+  if (!Number.isFinite(size) || size < 0) return undefined;
+  return Math.floor(size * (sizeUnits[unit] ?? 1));
+};
+
+const naturalKey = (value: string): string =>
+  value.toLowerCase().replace(/\d+/g, (digits) =>
+    String(Number(digits)).padStart(12, "0")
+  );
+
+const compareKey = (a: string, b: string): number =>
+  a < b ? -1 : a > b ? 1 : 0;
+
+const compareFlat = (a: FlatItem, b: FlatItem): number => {
+  if (a.entry.isDir !== b.entry.isDir) return a.entry.isDir ? -1 : 1;
+
+  let result = 0;
+  switch (flatSortBy.value) {
+    case "size":
+      result = a.entry.size - b.entry.size;
+      break;
+    case "modified":
+      result = a.timeKey - b.timeKey;
+      break;
+    case "path":
+      result = compareKey(a.pathKey, b.pathKey);
+      break;
+    default:
+      result = compareKey(a.nameKey, b.nameKey);
+  }
+  if (result === 0) result = compareKey(a.pathKey, b.pathKey);
+  return flatAsc.value ? result : -result;
+};
+
+const applyFlatSort = () => {
+  flatEntries.value = [...flatRaw.value].sort(compareFlat).map((item) => item.entry);
+};
+
+const flushFlat = throttle(applyFlatSort, 100);
+
+const flatRowHeight = 40;
+const flatOverscan = 6;
+const flatScroll = ref<HTMLElement | null>(null);
+const flatScrollTop = ref(0);
+const flatViewportHeight = ref(window.innerHeight - 220);
+
+const onFlatScroll = (event: Event) => {
+  flatScrollTop.value = (event.target as HTMLElement).scrollTop;
+};
+
+const flatStartIndex = computed(() =>
+  Math.max(0, Math.floor(flatScrollTop.value / flatRowHeight) - flatOverscan)
+);
+
+const visibleFlatEntries = computed(() => {
+  const count =
+    Math.ceil(flatViewportHeight.value / flatRowHeight) + flatOverscan * 2;
+  return flatEntries.value.slice(flatStartIndex.value, flatStartIndex.value + count);
+});
+
+const flatOffsetY = computed(() => flatStartIndex.value * flatRowHeight);
+const flatTotalHeight = computed(() => flatEntries.value.length * flatRowHeight);
+
+const fetchFlat = async () => {
+  flatController.abort();
+  const controller = new AbortController();
+  flatController = controller;
+  flushFlat.cancel();
+  flatRaw.value = [];
+  flatEntries.value = [];
+  flatScrollTop.value = 0;
+  flatLoading.value = true;
+
+  try {
+    await api.fetchAllStream(
+      route.path,
+      {
+        query: flatFilter.query,
+        type: flatFilter.type,
+        minSize: toBytes(flatFilter.minSize, flatFilter.sizeUnit),
+        maxSize: toBytes(flatFilter.maxSize, flatFilter.sizeUnit),
+        after: flatFilter.after,
+        before: flatFilter.before,
+      },
+      (entry) => {
+        if (flatController !== controller) return;
+        flatRaw.value.push({
+          entry,
+          nameKey: naturalKey(entry.name),
+          pathKey: naturalKey(entry.path),
+          timeKey: Date.parse(entry.modified),
+        });
+        flushFlat();
+      },
+      controller.signal
+    );
+    if (flatController === controller) applyFlatSort();
+  } catch (e: any) {
+    if (e?.is_canceled) return;
+    $showError(e);
+  } finally {
+    if (flatController === controller) flatLoading.value = false;
+  }
+};
+
+const debouncedFetchFlat = debounce(fetchFlat, 300);
+
+const toggleFlat = () => {
+  flatMode.value = !flatMode.value;
+  if (flatMode.value) {
+    fetchFlat();
+  } else {
+    flatController.abort();
+  }
+};
+
+const resetFlatFilter = () => {
+  flatFilter.query = "";
+  flatFilter.type = "";
+  flatFilter.minSize = "";
+  flatFilter.maxSize = "";
+  flatFilter.sizeUnit = "MB";
+  flatFilter.after = "";
+  flatFilter.before = "";
+};
+
+const flatSort = (by: string) => {
+  if (flatSortBy.value === by) {
+    flatAsc.value = !flatAsc.value;
+    return;
+  }
+  flatSortBy.value = by;
+  flatAsc.value = by === "name" || by === "path";
+};
+
+const flatIcon = (entry: RecursiveEntry) => {
+  if (entry.isDir) return "folder";
+  const extension = entry.extension.toLowerCase();
+  if ([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"].includes(extension)) {
+    return "insert_photo";
+  }
+  if ([".mp4", ".mkv", ".avi", ".mov", ".webm"].includes(extension)) {
+    return "movie";
+  }
+  if ([".mp3", ".flac", ".wav", ".ogg", ".m4a"].includes(extension)) {
+    return "volume_up";
+  }
+  if (extension === ".pdf") return "picture_as_pdf";
+  return "insert_drive_file";
+};
+
+const flatURL = (entry: RecursiveEntry) =>
+  "/files" + encodePath(entry.path) + (entry.isDir ? "/" : "");
+
+const relativePath = (entry: RecursiveEntry) => {
+  const root = removePrefix(route.path);
+  const prefix = root.endsWith("/") ? root : root + "/";
+  return entry.path.startsWith(prefix) ? entry.path.slice(prefix.length) : entry.path;
+};
 
 const showLimit = ref<number>(50);
 const columnWidth = ref<number>(280);
@@ -394,24 +753,52 @@ onBeforeRouteUpdate(() => {
   hideContextMenu();
 });
 
+watch(flatFilter, () => {
+  if (flatMode.value) debouncedFetchFlat();
+}, { deep: true });
+
+watch(() => route.path, () => {
+  if (flatMode.value) fetchFlat();
+});
+
 const { t } = useI18n();
 
 const listing = ref<HTMLElement | null>(null);
 
 const nameSorted = computed(() =>
-  fileStore.req ? fileStore.req.sorting.by === "name" : false
+  flatMode.value
+    ? flatSortBy.value === "name"
+    : fileStore.req
+      ? fileStore.req.sorting.by === "name"
+      : false
 );
 
 const sizeSorted = computed(() =>
-  fileStore.req ? fileStore.req.sorting.by === "size" : false
+  flatMode.value
+    ? flatSortBy.value === "size"
+    : fileStore.req
+      ? fileStore.req.sorting.by === "size"
+      : false
 );
 
 const modifiedSorted = computed(() =>
-  fileStore.req ? fileStore.req.sorting.by === "modified" : false
+  flatMode.value
+    ? flatSortBy.value === "modified"
+    : fileStore.req
+      ? fileStore.req.sorting.by === "modified"
+      : false
+);
+
+const pathSorted = computed(
+  () => flatMode.value && flatSortBy.value === "path"
 );
 
 const ascOrdered = computed(() =>
-  fileStore.req ? fileStore.req.sorting.asc : false
+  flatMode.value
+    ? flatAsc.value
+    : fileStore.req
+      ? fileStore.req.sorting.asc
+      : false
 );
 
 const dirs = computed(() => items.value.dirs.slice(0, showLimit.value));
@@ -461,6 +848,14 @@ const modifiedIcon = computed(() => {
   }
 
   return "arrow_upward";
+});
+
+const pathIcon = computed(() => {
+  if (pathSorted.value && !ascOrdered.value) {
+    return "arrow_upward";
+  }
+
+  return "arrow_downward";
 });
 
 const viewIcon = computed(() => {
@@ -537,6 +932,10 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  debouncedFetchFlat.cancel();
+  flushFlat.cancel();
+  flatController.abort();
+
   // Remove event listeners before destroying this page.
   window.removeEventListener("keydown", keyEvent);
   window.removeEventListener("scroll", scrollEvent);
@@ -932,6 +1331,14 @@ const resetOpacity = () => {
 };
 
 const sort = async (by: string) => {
+  if (flatMode.value) {
+    flatSort(by);
+    applyFlatSort();
+    flatScrollTop.value = 0;
+    if (flatScroll.value) flatScroll.value.scrollTop = 0;
+    return;
+  }
+
   let asc = false;
 
   if (by === "name") {
@@ -973,6 +1380,7 @@ const toggleMultipleSelection = () => {
 const windowsResize = throttle(() => {
   columnsResize();
   width.value = window.innerWidth;
+  flatViewportHeight.value = window.innerHeight - 220;
 
   // Listing element is not displayed
   if (listing.value == null) return;
@@ -1128,5 +1536,132 @@ const handleEmptyAreaClick = (e: MouseEvent) => {
 
 .file-selection-margin-bottom {
   margin-bottom: 3.5rem;
+}
+
+#flat-listing {
+  padding: 0.5em 0 1em;
+}
+
+.flat-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5em;
+  margin-bottom: 0.75em;
+}
+
+.flat-filters input,
+.flat-filters select {
+  background: var(--surfacePrimary);
+  border: 1px solid var(--borderPrimary);
+  border-radius: 4px;
+  color: var(--textPrimary);
+  padding: 0.4em 0.6em;
+}
+
+.flat-filters .flat-size {
+  width: 7em;
+}
+
+.flat-dash {
+  color: var(--textPrimary);
+}
+
+.flat-scroll {
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+}
+
+.flat-spacer {
+  position: relative;
+}
+
+.flat-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.flat-row {
+  display: grid !important;
+  grid-template-columns: minmax(10em, 2fr) minmax(10em, 2fr) 7em 12em;
+  gap: 0.5em;
+  align-items: center;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 0.75em;
+  border-bottom: 1px solid var(--divider);
+  color: var(--textPrimary);
+  text-decoration: none;
+}
+
+.flat-row.header {
+  font-weight: 500;
+  color: var(--textSecondary);
+  background: var(--surfaceSecondary);
+}
+
+.flat-row p {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+  margin: 0;
+  cursor: pointer;
+}
+
+.flat-row p.active {
+  color: var(--iconPrimary);
+}
+
+.flat-row p i {
+  font-size: 1.2em;
+  margin: 0;
+}
+
+.flat-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flat-row > .name {
+  font-weight: 500;
+}
+
+.flat-row > .name i {
+  font-size: 1.5em;
+  color: var(--iconPrimary);
+}
+
+.flat-row > .path,
+.flat-row > .size,
+.flat-row > .modified {
+  font-size: 0.9em;
+}
+
+.flat-row:not(.header):hover {
+  background: var(--hover);
+}
+
+.flat-count {
+  margin: 0.75em 0.5em;
+  color: var(--textPrimary);
+  font-size: 0.9em;
+}
+
+.flat-empty {
+  font-size: 1em;
+}
+
+@media (max-width: 736px) {
+  .flat-row {
+    grid-template-columns: minmax(8em, 1fr) 6em;
+  }
+
+  .flat-row > .path,
+  .flat-row > .modified {
+    display: none;
+  }
 }
 </style>
