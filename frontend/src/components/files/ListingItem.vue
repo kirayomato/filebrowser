@@ -326,7 +326,12 @@ const click = (event: Event | KeyboardEvent) => {
 };
 
 const open = () => {
-  router.push({ path: props.url });
+  if (props.isDir) {
+    router.push({ path: props.url });
+    return;
+  }
+
+  window.open(router.resolve(props.url).href, "_blank");
 };
 
 const getExtension = (fileName: string): string => {

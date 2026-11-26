@@ -358,6 +358,7 @@
                   class="item flat-row"
                   :class="{ 'flat-selected': isFlatSelected(entry) }"
                   :to="flatURL(entry)"
+                  :target="entry.isDir ? undefined : '_blank'"
                 >
                   <label class="flat-check" @click.stop>
                     <input

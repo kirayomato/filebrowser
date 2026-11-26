@@ -59,7 +59,11 @@
         </template>
         <ul v-show="results.length > 0">
           <li v-for="(s, k) in filteredResults" :key="k">
-            <router-link v-on:click="close" :to="s.url">
+            <router-link
+              v-on:click="close"
+              :to="s.url"
+              :target="s.dir ? undefined : '_blank'"
+            >
               <i v-if="s.dir" class="material-icons">folder</i>
               <i v-else class="material-icons">insert_drive_file</i>
               <span>./{{ s.path }}</span>
