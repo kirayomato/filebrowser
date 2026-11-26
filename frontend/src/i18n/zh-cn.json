@@ -180,6 +180,18 @@
     "uploadMessage": "请选择上传选项",
     "optionalPassword": "密码（选填，留空则无需密码）",
     "resolution": "分辨率",
+    "workflow": "工作流",
+    "workflowRead": "读取",
+    "workflowLoading": "读取中…",
+    "workflowMissing": "未发现文本元数据",
+    "workflowCopy": "复制",
+    "workflowCopied": "已复制",
+    "positivePrompt": "正向提示词",
+    "negativePrompt": "负向提示词",
+    "model": "模型",
+    "sampler": "采样器",
+    "steps": "步数",
+    "seed": "种子",
     "discardEditorChanges": "是否放弃已修改的内容？",
     "replaceOrSkip": "替换或跳过文件",
     "resolveConflict": "保留哪些文件？",
@@ -192,7 +204,8 @@
     "skip": "跳过",
     "forbiddenError": "权限错误",
     "currentPassword": "当前密码",
-    "currentPasswordMessage": "请输入当前密码以验证操作"
+    "currentPasswordMessage": "请输入当前密码以验证操作",
+    "workflowFound": "已发现文本"
   },
   "search": {
     "images": "图像",

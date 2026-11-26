@@ -180,6 +180,18 @@
     "uploadMessage": "Select an option to upload.",
     "optionalPassword": "Optional password",
     "resolution": "Resolution",
+    "workflow": "Workflow",
+    "workflowRead": "Read",
+    "workflowLoading": "Reading…",
+    "workflowMissing": "No text metadata",
+    "workflowCopy": "Copy",
+    "workflowCopied": "Copied",
+    "positivePrompt": "Positive prompt",
+    "negativePrompt": "Negative prompt",
+    "model": "Model",
+    "sampler": "Sampler",
+    "steps": "Steps",
+    "seed": "Seed",
     "discardEditorChanges": "Are you sure you wish to discard the changes you've made?",
     "replaceOrSkip": "Replace or skip files",
     "resolveConflict": "Which files do you want to keep?",
@@ -192,7 +204,8 @@
     "skip": "Skip",
     "forbiddenError": "Forbidden Error",
     "currentPassword": "Your password",
-    "currentPasswordMessage": "Enter your password to validate this action."
+    "currentPasswordMessage": "Enter your password to validate this action.",
+    "workflowFound": "Text found"
   },
   "search": {
     "images": "Images",

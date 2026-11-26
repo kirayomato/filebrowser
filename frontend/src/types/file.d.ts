@@ -101,3 +101,34 @@ interface RecursiveQuery {
   sortBy?: string;
   asc?: boolean;
 }
+
+interface ExifSummary {
+  model?: string;
+  sampler?: string;
+  scheduler?: string;
+  steps?: number;
+  cfg?: number;
+  seed?: number;
+  width?: number;
+  height?: number;
+  positive?: string;
+  negative?: string;
+}
+
+interface ExifField {
+  source: string;
+  key: string;
+  value: string;
+}
+
+interface ExifMeta {
+  format: string;
+  kind: "" | "comfyui" | "a1111" | "nai";
+  hasText: boolean;
+  hasWorkflow: boolean;
+  fields?: ExifField[];
+  workflow?: unknown;
+  prompt?: unknown;
+  parameters?: string;
+  summary?: ExifSummary;
+}

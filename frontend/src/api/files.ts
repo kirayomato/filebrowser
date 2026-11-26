@@ -271,6 +271,11 @@ export async function checksum(url: string, algo: ChecksumAlg) {
   return (await data.json()).checksums[algo];
 }
 
+export async function getExifMeta(url: string) {
+  const res = await fetchURL(`/api/exif${url}`, {});
+  return (await res.json()) as ExifMeta;
+}
+
 export function getDownloadURL(file: ResourceItem, inline: any) {
   const params = {
     ...(inline && { inline: "true" }),
