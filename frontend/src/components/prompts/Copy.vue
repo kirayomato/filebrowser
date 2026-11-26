@@ -75,7 +75,7 @@ export default {
   },
   inject: ["$showError"],
   computed: {
-    ...mapState(useFileStore, ["req", "selected"]),
+    ...mapState(useFileStore, ["req", "selected", "selectedEntries"]),
     ...mapState(useAuthStore, ["user"]),
     ...mapWritableState(useFileStore, ["reload", "preselect"]),
   },
@@ -86,14 +86,14 @@ export default {
       const items = [];
 
       // Create a new promise for each file.
-      for (const item of this.selected) {
+      for (const item of this.selectedEntries) {
         items.push({
-          from: this.req.items[item].url,
-          to: this.dest + encodeURIComponent(this.req.items[item].name),
-          name: this.req.items[item].name,
-          size: this.req.items[item].size,
-          isDir: this.req.items[item].isDir,
-          modified: this.req.items[item].modified,
+          from: item.url,
+          to: this.dest + encodeURIComponent(item.name),
+          name: item.name,
+          size: item.size,
+          isDir: item.isDir,
+          modified: item.modified,
           overwrite: false,
           rename: this.$route.path === this.dest,
         });

@@ -11,5 +11,6 @@ chmod +x ./filebrowser-android-arm64
 pkill -9 -f filebrowser-android-arm64
 setsid ./filebrowser-android-arm64 -p 8888 -a 0.0.0.0 -r /storage/emulated/ > filebrowser_log.txt 2>&1 &
 
-# http://localhost:8888/files/Android/data/com.tencent.mobileqq/Tencent/MobileQQ/chatpic
+# 0 正常app目录 999 分身app目录
+# http://localhost:8888/files/0/Android/data/com.tencent.mobileqq/Tencent/MobileQQ/chatpic
 

@@ -77,7 +77,12 @@
           :label="t('buttons.upload')"
           @action="uploadFunc"
         />
-        <action icon="info" :label="t('buttons.info')" show="info" />
+        <action
+          v-if="!flatMode"
+          icon="info"
+          :label="t('buttons.info')"
+          show="info"
+        />
         <action
           icon="check_circle"
           :label="t('buttons.selectMultiple')"
@@ -144,6 +149,48 @@
         id="flat-listing"
         :style="{ '--flat-thumb-size': `${flatThumbSize}px` }"
       >
+        <div v-if="flatPickerOpen" class="flat-picker">
+          <p class="message">{{ t("files.flat.pickFolder") }}</p>
+          <div v-if="flatFolders.length > 0" class="flat-picker-list">
+            <label
+              v-for="folder in flatFolders"
+              :key="folder.path"
+              class="flat-picker-item"
+            >
+              <input
+                type="checkbox"
+                :checked="isFlatPicked('/files' + encodePath(folder.path))"
+                @change="toggleFlatPicker('/files' + encodePath(folder.path))"
+              />
+              <i class="material-icons">folder</i>
+              {{ folder.name }}
+            </label>
+          </div>
+          <p v-else class="message">{{ t("files.flat.noFolders") }}</p>
+          <div class="flat-picker-actions">
+            <button
+              v-if="flatFolderPaths.length > 0"
+              class="flat-picker-link"
+              @click="toggleFlatPickerAll"
+            >
+              {{
+                flatPickerFoldersAll
+                  ? t("files.flat.unselectAll")
+                  : t("files.flat.selectAll")
+              }}
+            </button>
+            <button
+              class="flat-picker-start"
+              :disabled="flatPicker.length === 0"
+              @click="startFlatScan"
+            >
+              {{ t("files.flat.startScan") }}
+            </button>
+            <button class="flat-picker-cancel" @click="cancelFlatPicker">
+              {{ t("buttons.cancel") }}
+            </button>
+          </div>
+        </div>
         <div class="flat-filters">
           <input
             v-model.trim="flatFilter.query"
@@ -216,9 +263,34 @@
           >
             <i class="material-icons">clear</i>
           </button>
+          <button
+            class="action"
+            :title="t('files.flat.changeFolder')"
+            :aria-label="t('files.flat.changeFolder')"
+            @click="changeFlatFolder"
+          >
+            <i class="material-icons">folder_open</i>
+          </button>
+          <button
+            v-if="flatDeep"
+            class="action"
+            :title="t('files.flat.shallow')"
+            :aria-label="t('files.flat.shallow')"
+            @click="showFlatShallow"
+          >
+            <i class="material-icons">unfold_less</i>
+          </button>
         </div>
 
         <div class="item header flat-row">
+          <label class="flat-check">
+            <input
+              type="checkbox"
+              :checked="flatAllSelected"
+              :aria-label="t('files.flat.selectAll')"
+              @change="toggleFlatSelectAll"
+            />
+          </label>
           <p
             :class="{ active: nameSorted }"
             class="name"
@@ -284,8 +356,16 @@
                   v-for="entry in visibleFlatEntries"
                   :key="entry.path"
                   class="item flat-row"
+                  :class="{ 'flat-selected': isFlatSelected(entry) }"
                   :to="flatURL(entry)"
                 >
+                  <label class="flat-check" @click.stop>
+                    <input
+                      type="checkbox"
+                      :checked="isFlatSelected(entry)"
+                      @change="toggleFlatSelected(entry)"
+                    />
+                  </label>
                   <span class="name">
                     <img
                       v-if="enableThumbs && isFlatImage(entry)"
@@ -312,7 +392,12 @@
             {{ t("files.flat.empty") }}
           </p>
         </template>
-        <p class="flat-count">{{ flatEntries.length }} {{ t("files.flat.count") }}</p>
+        <p class="flat-count">
+          {{ flatEntries.length }} {{ t("files.flat.count") }}
+          <span v-if="flatDeep" class="flat-scope">
+            · {{ t("files.flat.recursive") }}
+          </span>
+        </p>
       </div>
       <div
         v-else-if="
@@ -482,7 +567,12 @@
             @action="download"
             :counter="fileStore.selectedCount"
           />
-          <action icon="info" :label="t('buttons.info')" show="info" />
+          <action
+          v-if="!flatMode"
+          icon="info"
+          :label="t('buttons.info')"
+          show="info"
+        />
         </context-menu>
 
         <input
@@ -582,13 +672,19 @@ const flatFilter = reactive({
   before: "",
 });
 const flatThumbSize = ref<number>(40);
+// false 表示只列根目录下一层，true 表示递归整棵子树。
+const flatDeep = ref<boolean>(false);
+const flatPickerOpen = ref<boolean>(false);
 const flatScrollTop = ref(0);
+const flatScanRoots = shallowRef<string[]>([]);
+const flatSelected = shallowRef<Set<string>>(new Set());
 const flatCache = new Map<string, FlatItem[]>();
 let flatController = new AbortController();
 
-const flatCacheKey = (path: string): string =>
+const flatCacheKey = (roots: string[]): string =>
   JSON.stringify([
-    path,
+    [...roots].sort(),
+    flatDeep.value,
     flatFilter.query,
     flatFilter.type,
     toBytes(flatFilter.minSize, flatFilter.sizeUnit),
@@ -677,13 +773,17 @@ const flatOffsetY = computed(() => flatStartIndex.value * flatRowHeight.value);
 const flatTotalHeight = computed(() => flatEntries.value.length * flatRowHeight.value);
 
 const fetchFlat = async () => {
+  const roots = dedupeRoots(flatScanRoots.value);
+  if (roots.length === 0) return;
+  flatScanRoots.value = roots;
+
   flatController.abort();
   const controller = new AbortController();
   flatController = controller;
   flushPending.cancel();
   pendingFlat = [];
 
-  const key = flatCacheKey(route.path);
+  const key = flatCacheKey(roots);
   const cached = flatCache.get(key);
   if (cached) {
     flatRaw.value = cached;
@@ -697,41 +797,67 @@ const fetchFlat = async () => {
   flatEntries.value = [];
   flatScrollTop.value = 0;
   flatLoading.value = true;
+  clearFlatSelection();
+
+  const params = {
+    query: flatFilter.query,
+    type: flatFilter.type,
+    minSize: toBytes(flatFilter.minSize, flatFilter.sizeUnit),
+    maxSize: toBytes(flatFilter.maxSize, flatFilter.sizeUnit),
+    after: flatFilter.after,
+    before: flatFilter.before,
+    depth: flatDeep.value ? undefined : 1,
+  };
+
+  const results = await Promise.allSettled(
+    roots.map((root) =>
+      api.fetchAllStream(
+        root,
+        params,
+        (entry) => {
+          if (flatController !== controller) return;
+          pendingFlat.push({
+            entry,
+            nameKey: naturalKey(entry.name),
+            pathKey: naturalKey(entry.path),
+            timeKey: Date.parse(entry.modified),
+          });
+          flushPending();
+        },
+        controller.signal
+      )
+    )
+  );
 
   try {
-    await api.fetchAllStream(
-      route.path,
-      {
-        query: flatFilter.query,
-        type: flatFilter.type,
-        minSize: toBytes(flatFilter.minSize, flatFilter.sizeUnit),
-        maxSize: toBytes(flatFilter.maxSize, flatFilter.sizeUnit),
-        after: flatFilter.after,
-        before: flatFilter.before,
-      },
-      (entry) => {
-        if (flatController !== controller) return;
-        pendingFlat.push({
-          entry,
-          nameKey: naturalKey(entry.name),
-          pathKey: naturalKey(entry.path),
-          timeKey: Date.parse(entry.modified),
-        });
-        flushPending();
-      },
-      controller.signal
-    );
-    if (flatController === controller) {
-      if (pendingFlat.length > 0) {
-        flatRaw.value = flatRaw.value.concat(pendingFlat);
-        pendingFlat = [];
-      }
-      flatCache.set(key, flatRaw.value);
-      applyFlatSort();
+    if (flatController !== controller) return;
+
+    if (pendingFlat.length > 0) {
+      flatRaw.value = flatRaw.value.concat(pendingFlat);
+      pendingFlat = [];
     }
-  } catch (e: any) {
-    if (e?.is_canceled) return;
-    $showError(e);
+    applyFlatSort();
+
+    const failures = roots.flatMap((root, index) => {
+      const result = results[index];
+      if (result.status !== "rejected") return [];
+      const reason = result.reason;
+      if (reason?.is_canceled) return [];
+      return [{ root, reason }];
+    });
+
+    // 部分根失败时不写缓存，下次进来仍会重试失败的根。
+    if (failures.length === 0) flatCache.set(key, flatRaw.value);
+    else {
+      $showError(
+        failures
+          .map(
+            ({ root, reason }) =>
+              `${flatRootLabel(root)}: ${reason?.message ?? reason}`
+          )
+          .join("; ")
+      );
+    }
   } finally {
     if (flatController === controller) flatLoading.value = false;
   }
@@ -739,13 +865,116 @@ const fetchFlat = async () => {
 
 const debouncedFetchFlat = debounce(fetchFlat, 300);
 
+const flatResourceUrl = (entry: RecursiveEntry): string =>
+  "/files" + encodePath(entry.path);
+
+const syncFlatSelection = () => {
+  fileStore.flatSelected = flatEntries.value
+    .filter((entry) => flatSelected.value.has(entry.path))
+    .map((entry) => ({
+      url: flatResourceUrl(entry),
+      name: entry.name,
+      size: entry.size,
+      isDir: entry.isDir,
+      modified: entry.modified,
+      path: entry.path,
+    }));
+};
+
+const clearFlatSelection = () => {
+  flatSelected.value = new Set();
+  fileStore.flatSelected = [];
+};
+
+const isFlatSelected = (entry: RecursiveEntry): boolean =>
+  flatSelected.value.has(entry.path);
+
+const toggleFlatSelected = (entry: RecursiveEntry) => {
+  const next = new Set(flatSelected.value);
+  if (next.has(entry.path)) next.delete(entry.path);
+  else next.add(entry.path);
+  flatSelected.value = next;
+  syncFlatSelection();
+};
+
+const flatAllSelected = computed(
+  () =>
+    flatEntries.value.length > 0 &&
+    flatEntries.value.every((entry) => flatSelected.value.has(entry.path))
+);
+
+const toggleFlatSelectAll = () => {
+  flatSelected.value = flatAllSelected.value
+    ? new Set()
+    : new Set(flatEntries.value.map((entry) => entry.path));
+  syncFlatSelection();
+};
+
+const flatPicker = ref<string[]>([]);
+
+const isFlatPicked = (path: string): boolean => flatPicker.value.includes(path);
+
+const toggleFlatPicker = (path: string) => {
+  const next = new Set(flatPicker.value);
+  if (next.has(path)) next.delete(path);
+  else next.add(path);
+  flatPicker.value = [...next];
+};
+
+// 面包屑链接总以 "/" 结尾，扫描根必须归一化，否则请求、缓存键与深度语义都会漂移。
+const normalizeRoot = (path: string): string =>
+  path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+
+// 父根已覆盖子根时只保留父根，避免同一子树被多次遍历。
+const dedupeRoots = (roots: string[]): string[] => {
+  const normalized = [...new Set(roots)].map(normalizeRoot);
+  return normalized.filter(
+    (root) =>
+      !normalized.some((other) => other !== root && root.startsWith(other + "/"))
+  );
+};
+
 const toggleFlat = () => {
   flatMode.value = !flatMode.value;
+  clearFlatSelection();
+  fileStore.selected = [];
+  flatPickerOpen.value = false;
+  flatPicker.value = [];
   if (flatMode.value) {
+    // 进入平铺只列当前目录一层，递归扫描必须手动触发。
+    flatScanRoots.value = [normalizeRoot(route.path)];
+    flatDeep.value = false;
     fetchFlat();
   } else {
     flatController.abort();
   }
+};
+
+const startFlatScan = () => {
+  const roots = dedupeRoots(flatPicker.value);
+  if (roots.length === 0) return;
+  flatScanRoots.value = roots;
+  flatDeep.value = true;
+  flatPicker.value = [];
+  flatPickerOpen.value = false;
+  fetchFlat();
+};
+
+const changeFlatFolder = () => {
+  flatPickerOpen.value = !flatPickerOpen.value;
+  flatPicker.value = [];
+};
+
+const cancelFlatPicker = () => {
+  flatPickerOpen.value = false;
+  flatPicker.value = [];
+};
+
+// 退出递归扫描，回到只列当前目录一层。
+const showFlatShallow = () => {
+  flatScanRoots.value = [normalizeRoot(route.path)];
+  flatDeep.value = false;
+  fetchFlat();
 };
 
 const resetFlatFilter = () => {
@@ -795,10 +1024,26 @@ const flatIcon = (entry: RecursiveEntry) => {
 const flatURL = (entry: RecursiveEntry) =>
   "/files" + encodePath(entry.path) + (entry.isDir ? "/" : "");
 
+const flatRootLabel = (root: string): string => {
+  const parts = removePrefix(root).split("/").filter(Boolean);
+  return decodeURIComponent(parts[parts.length - 1] ?? "") || "/";
+};
+
 const relativePath = (entry: RecursiveEntry) => {
-  const root = removePrefix(route.path);
-  const prefix = root.endsWith("/") ? root : root + "/";
-  return entry.path.startsWith(prefix) ? entry.path.slice(prefix.length) : entry.path;
+  const roots = flatScanRoots.value.length ? flatScanRoots.value : [route.path];
+  const root =
+    roots.find((item) => {
+      const base = removePrefix(item);
+      return base === "/" || entry.path === base || entry.path.startsWith(base + "/");
+    }) ?? roots[0];
+  const base = removePrefix(root);
+  const rel =
+    base === "/"
+      ? entry.path.slice(1)
+      : entry.path.startsWith(base + "/")
+        ? entry.path.slice(base.length + 1)
+        : entry.path;
+  return roots.length <= 1 ? rel : `${flatRootLabel(root)}/${rel}`;
 };
 
 const showLimit = ref<number>(50);
@@ -823,21 +1068,50 @@ onBeforeRouteUpdate(() => {
   hideContextMenu();
 });
 
+const flatFolders = computed(() =>
+  (fileStore.req?.items ?? []).filter((item) => item.isDir)
+);
+
+const flatFolderPaths = computed(() =>
+  flatFolders.value.map((folder) => "/files" + encodePath(folder.path))
+);
+
+// 「全选」只作用于子文件夹；「扫描当前目录」包含全部子目录，混在一起会被父根合并掉。
+const flatPickerFoldersAll = computed(
+  () =>
+    flatFolderPaths.value.length > 0 &&
+    flatFolderPaths.value.every((path) => flatPicker.value.includes(path))
+);
+
+const toggleFlatPickerAll = () => {
+  const next = new Set(flatPicker.value);
+  if (flatPickerFoldersAll.value) {
+    for (const path of flatFolderPaths.value) next.delete(path);
+  } else {
+    for (const path of flatFolderPaths.value) next.add(path);
+  }
+  flatPicker.value = [...next];
+};
+
 watch(flatFilter, () => {
-  if (flatMode.value) debouncedFetchFlat();
+  if (flatMode.value && flatScanRoots.value.length > 0) debouncedFetchFlat();
 }, { deep: true });
 
 watch(() => route.path, () => {
-  if (flatMode.value) fetchFlat();
+  if (!flatMode.value) return;
+  clearFlatSelection();
+  flatPicker.value = [];
+  flatPickerOpen.value = false;
+  flatScanRoots.value = [normalizeRoot(route.path)];
+  flatDeep.value = false;
+  fetchFlat();
 });
 
 watch(reload, (value) => {
   if (!value) return;
-  const prefix = JSON.stringify(route.path) + ",";
-  for (const key of flatCache.keys()) {
-    if (key.startsWith(prefix)) flatCache.delete(key);
-  }
-  if (flatMode.value) fetchFlat();
+  // 多根扫描的缓存键不再是单一路径前缀，整体失效更稳妥。
+  flatCache.clear();
+  if (flatMode.value && flatScanRoots.value.length > 0) fetchFlat();
 });
 
 const { t } = useI18n();
@@ -956,6 +1230,7 @@ const headerButtons = computed(() => {
     delete: fileStore.selectedCount > 0 && authStore.user?.perm.delete,
     rename: fileStore.selectedCount === 1 && authStore.user?.perm.rename,
     share:
+      !flatMode.value &&
       fileStore.selectedCount === 1 &&
       authStore.user?.perm.share &&
       authStore.user?.perm.download,
@@ -986,6 +1261,22 @@ watch(req, () => {
 });
 
 onMounted(() => {
+  if (flatMode.value) {
+    // 组件重建（例如从预览返回）时状态是模块级保留的，只有「当前目录浅层」
+    // 这一种情况可以原样恢复，其余一律回到当前目录一层。
+    const sameShallowView =
+      !flatDeep.value &&
+      flatScanRoots.value.length === 1 &&
+      flatScanRoots.value[0] === normalizeRoot(route.path);
+    if (!sameShallowView) {
+      flatScanRoots.value = [normalizeRoot(route.path)];
+      flatDeep.value = false;
+      flatPickerOpen.value = false;
+      flatPicker.value = [];
+      fetchFlat();
+    }
+  }
+
   // Check the columns size for the first time.
   columnsResize();
 
@@ -1038,6 +1329,7 @@ const keyEvent = (event: KeyboardEvent) => {
 
   if (event.key === "Escape") {
     // Reset files selection.
+    clearFlatSelection();
     fileStore.selected = [];
   }
 
@@ -1077,6 +1369,13 @@ const keyEvent = (event: KeyboardEvent) => {
       break;
     case "a":
       event.preventDefault();
+      if (flatMode.value) {
+        flatSelected.value = new Set(
+          flatEntries.value.map((entry) => entry.path)
+        );
+        syncFlatSelection();
+        break;
+      }
       for (const file of items.value.files) {
         if (fileStore.selected.indexOf(file.index) === -1) {
           fileStore.selected.push(file.index);
@@ -1107,13 +1406,13 @@ const copyCut = (event: Event | KeyboardEvent): void => {
 
   const items = [];
 
-  for (const i of fileStore.selected) {
+  for (const entry of fileStore.selectedEntries) {
     items.push({
-      from: fileStore.req.items[i].url,
-      name: fileStore.req.items[i].name,
-      size: fileStore.req.items[i].size,
-      isDir: fileStore.req.items[i].isDir,
-      modified: fileStore.req.items[i].modified,
+      from: entry.url,
+      name: entry.name,
+      size: entry.size,
+      isDir: entry.isDir,
+      modified: entry.modified,
     });
   }
 
@@ -1475,11 +1774,10 @@ const windowsResize = throttle(() => {
 const download = () => {
   if (fileStore.req === null) return;
 
-  if (
-    fileStore.selectedCount === 1 &&
-    !fileStore.req.items[fileStore.selected[0]].isDir
-  ) {
-    api.download(null, fileStore.req.items[fileStore.selected[0]].url);
+  const entries = fileStore.selectedEntries;
+
+  if (entries.length === 1 && !entries[0].isDir) {
+    api.download(null, entries[0].url);
     return;
   }
 
@@ -1490,9 +1788,9 @@ const download = () => {
 
       const files = [];
 
-      if (fileStore.selectedCount > 0 && fileStore.req !== null) {
-        for (const i of fileStore.selected) {
-          files.push(fileStore.req.items[i].url);
+      if (entries.length > 0) {
+        for (const entry of entries) {
+          files.push(entry.url);
         }
       } else {
         files.push(route.path);
@@ -1622,6 +1920,82 @@ const handleEmptyAreaClick = (e: MouseEvent) => {
   padding: 0.5em 0 1em;
 }
 
+.flat-picker {
+  max-width: 64em;
+}
+
+.flat-picker-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  margin-bottom: 0.75em;
+}
+
+.flat-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  max-width: 100%;
+  padding: 0.5em 0.8em;
+  background: var(--surfacePrimary);
+  border: 1px solid var(--borderPrimary);
+  border-radius: 4px;
+  color: var(--textPrimary);
+  cursor: pointer;
+}
+
+.flat-picker-item:hover {
+  border-color: var(--blue);
+}
+
+.flat-picker-item i {
+  color: var(--blue);
+}
+
+.flat-picker-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.flat-picker-link {
+  margin-right: auto;
+  padding: 0.5em 0.4em;
+  border: none;
+  background: transparent;
+  color: var(--blue);
+  cursor: pointer;
+}
+
+.flat-picker-start {
+  padding: 0.5em 1.2em;
+  border: 1px solid var(--blue);
+  border-radius: 4px;
+  background: var(--blue);
+  color: #fff;
+  cursor: pointer;
+}
+
+.flat-picker-start:disabled {
+  background: transparent;
+  border-color: var(--borderPrimary);
+  color: var(--textSecondary);
+  cursor: default;
+}
+
+.flat-picker-cancel {
+  padding: 0.5em 1.2em;
+  border: 1px solid var(--borderPrimary);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--textPrimary);
+  cursor: pointer;
+}
+
+.flat-scope {
+  color: var(--textSecondary);
+}
+
 .flat-filters {
   display: flex;
   flex-wrap: wrap;
@@ -1665,7 +2039,7 @@ const handleEmptyAreaClick = (e: MouseEvent) => {
 
 .flat-row {
   display: grid !important;
-  grid-template-columns: minmax(10em, 2fr) minmax(10em, 2fr) 7em 12em;
+  grid-template-columns: 2em minmax(10em, 2fr) minmax(10em, 2fr) 7em 12em;
   gap: 0.5em;
   align-items: center;
   height: calc(var(--flat-thumb-size, 40px) + 16px);
@@ -1674,6 +2048,22 @@ const handleEmptyAreaClick = (e: MouseEvent) => {
   border-bottom: 1px solid var(--divider);
   color: var(--textPrimary);
   text-decoration: none;
+}
+
+.flat-row.flat-selected {
+  background: var(--surfaceSecondary);
+}
+
+.flat-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.flat-check input {
+  margin: 0;
+  cursor: pointer;
 }
 
 .flat-row.header {

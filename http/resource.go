@@ -452,6 +452,8 @@ type recursiveFilter struct {
 	before  time.Time
 	sortBy  string
 	asc     bool
+	// depth limits how many levels below the root are walked; 0 means unlimited.
+	depth int
 }
 
 func parseRecursiveFilter(r *http.Request) (*recursiveFilter, error) {
@@ -478,6 +480,13 @@ func parseRecursiveFilter(r *http.Request) (*recursiveFilter, error) {
 			return nil, fmt.Errorf("invalid maxSize %q: %w", raw, fberrors.ErrInvalidRequestParams)
 		}
 		f.maxSize = value
+	}
+	if raw := q.Get("depth"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			return nil, fmt.Errorf("invalid depth %q: %w", raw, fberrors.ErrInvalidRequestParams)
+		}
+		f.depth = value
 	}
 	for _, date := range []struct {
 		name    string
@@ -660,6 +669,13 @@ var resourceGetRecursiveHandler = withUser(func(w http.ResponseWriter, r *http.R
 	if rootPath == "" {
 		rootPath = "/"
 	}
+	// A trailing slash shifts the depth computation by one level, because the
+	// relative path of a child then no longer starts with a separator. Normalize
+	// the root so "depth=1" always means "direct children only".
+	rootPath = filepath.ToSlash(filepath.Clean(rootPath))
+	if !strings.HasPrefix(rootPath, "/") {
+		rootPath = "/" + rootPath
+	}
 
 	filter, err := parseRecursiveFilter(r)
 	if err != nil {
@@ -700,6 +716,17 @@ var resourceGetRecursiveHandler = withUser(func(w http.ResponseWriter, r *http.R
 		// Skip the root directory itself.
 		if fPath == rootPath {
 			return nil
+		}
+
+		// Stop descending once the requested depth is reached.
+		if filter.depth > 0 {
+			rel := strings.TrimPrefix(filepath.ToSlash(fPath), root)
+			if strings.Count(rel, "/") > filter.depth {
+				if info.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 		}
 
 		// Respect user rules.

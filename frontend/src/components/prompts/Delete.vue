@@ -48,6 +48,7 @@ export default {
       "selectedCount",
       "req",
       "selected",
+      "selectedEntries",
     ]),
     ...mapState(useLayoutStore, ["currentPrompt"]),
     ...mapWritableState(useFileStore, ["reload", "preselect"]),
@@ -74,17 +75,18 @@ export default {
         }
 
         const promises = [];
-        for (const index of this.selected) {
-          promises.push(api.remove(this.req.items[index].url));
+        for (const entry of this.selectedEntries) {
+          promises.push(api.remove(entry.url));
         }
 
         await Promise.all(promises);
         buttons.success("delete");
 
-        const nearbyItem =
-          this.req.items[Math.max(0, Math.min(this.selected) - 1)];
-
-        this.preselect = nearbyItem?.path;
+        if (this.selected.length > 0) {
+          const nearbyItem =
+            this.req.items[Math.max(0, Math.min(...this.selected) - 1)];
+          this.preselect = nearbyItem?.path;
+        }
 
         this.reload = true;
       } catch (e) {

@@ -100,6 +100,7 @@ interface RecursiveQuery {
   before?: string;
   sortBy?: string;
   asc?: boolean;
+  depth?: number;
 }
 
 interface ExifSummary {

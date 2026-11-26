@@ -108,7 +108,15 @@
       "after": "Modified after",
       "before": "Modified before",
       "count": "results",
-      "empty": "No matching files"
+      "empty": "No matching files",
+      "pickFolder": "Select one or more subfolders to scan",
+      "noFolders": "No subfolders here",
+      "startScan": "Start scan",
+      "shallow": "Top level only",
+      "recursive": "recursive scan",
+      "changeFolder": "Change folder",
+      "selectAll": "Select all",
+      "unselectAll": "Unselect all"
     }
   },
   "help": {

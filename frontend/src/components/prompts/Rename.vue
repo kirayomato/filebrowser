@@ -65,6 +65,7 @@ export default {
       "req",
       "selected",
       "selectedCount",
+      "selectedEntries",
       "isListing",
     ]),
     ...mapWritableState(useFileStore, ["reload", "preselect"]),
@@ -78,7 +79,7 @@ export default {
         return "";
       }
 
-      return this.req.items[this.selected[0]].name;
+      return this.selectedEntries[0].name;
     },
   },
   methods: {
@@ -96,7 +97,7 @@ export default {
       if (!this.isListing) {
         oldLink = this.req.url;
       } else {
-        oldLink = this.req.items[this.selected[0]].url;
+        oldLink = this.selectedEntries[0].url;
       }
 
       newLink =

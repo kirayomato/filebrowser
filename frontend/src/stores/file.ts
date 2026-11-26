@@ -1,5 +1,14 @@
 import { defineStore } from "pinia";
 
+export interface SelectedEntry {
+  url: string;
+  name: string;
+  size: number;
+  isDir: boolean;
+  modified: string;
+  path: string;
+}
+
 export const useFileStore = defineStore("file", {
   // convert to a function
   state: (): {
@@ -7,6 +16,7 @@ export const useFileStore = defineStore("file", {
     oldReq: Resource | null;
     reload: boolean;
     selected: number[];
+    flatSelected: SelectedEntry[];
     multiple: boolean;
     isFiles: boolean;
     preselect: string | null;
@@ -15,12 +25,29 @@ export const useFileStore = defineStore("file", {
     oldReq: null,
     reload: false,
     selected: [],
+    flatSelected: [],
     multiple: false,
     isFiles: false,
     preselect: null,
   }),
   getters: {
-    selectedCount: (state) => state.selected.length,
+    selectedCount: (state) =>
+      state.flatSelected.length || state.selected.length,
+    selectedEntries(state): SelectedEntry[] {
+      if (state.flatSelected.length) return state.flatSelected;
+      if (!state.req?.items) return [];
+      return state.selected
+        .map((i) => state.req!.items[i])
+        .filter((item): item is ResourceItem => Boolean(item))
+        .map((item) => ({
+          url: item.url,
+          name: item.name,
+          size: item.size,
+          isDir: item.isDir,
+          modified: item.modified,
+          path: item.path,
+        }));
+    },
     // route: () => {
     //   const routerStore = useRouterStore();
     //   return routerStore.router.currentRoute;
@@ -56,6 +83,10 @@ export const useFileStore = defineStore("file", {
       const i = this.selected.indexOf(value);
       if (i === -1) return;
       this.selected.splice(i, 1);
+    },
+    clearSelection() {
+      this.selected = [];
+      this.flatSelected = [];
     },
     // easily reset state using `$reset`
     clearFile() {
