@@ -15,6 +15,7 @@ export const useFileStore = defineStore("file", {
     req: Resource | null;
     oldReq: Resource | null;
     reload: boolean;
+    silentReload: boolean;
     selected: number[];
     flatSelected: SelectedEntry[];
     multiple: boolean;
@@ -24,6 +25,7 @@ export const useFileStore = defineStore("file", {
     req: null,
     oldReq: null,
     reload: false,
+    silentReload: false,
     selected: [],
     flatSelected: [],
     multiple: false,

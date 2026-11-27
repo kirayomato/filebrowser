@@ -141,14 +141,23 @@ const applyPreSelection = () => {
 };
 
 const fetchData = async () => {
+  const silent = fileStore.silentReload;
+  fileStore.silentReload = false;
+
   // Reset view information.
   fileStore.reload = false;
-  fileStore.selected = [];
-  fileStore.multiple = false;
-  layoutStore.closeHovers();
 
-  // Set loading to true and reset the error.
-  layoutStore.loading = true;
+  // A silent reload swaps the data underneath the current listing, keeping
+  // the scroll position and the selection the user is working with.
+  if (!silent) {
+    fileStore.selected = [];
+    fileStore.multiple = false;
+    layoutStore.closeHovers();
+
+    // Set loading to true and reset the error.
+    layoutStore.loading = true;
+  }
+
   error.value = null;
 
   let url = route.path;

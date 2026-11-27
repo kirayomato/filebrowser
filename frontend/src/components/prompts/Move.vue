@@ -79,7 +79,7 @@ export default {
   computed: {
     ...mapState(useFileStore, ["req", "selected", "selectedEntries"]),
     ...mapState(useAuthStore, ["user"]),
-    ...mapWritableState(useFileStore, ["reload", "preselect"]),
+    ...mapWritableState(useFileStore, ["reload", "silentReload", "preselect"]),
     excludedFolders() {
       return this.selectedEntries
         .filter((entry) => entry.isDir)
@@ -130,7 +130,9 @@ export default {
                 navigating = true;
               },
               close: () => {
-                if (!navigating) this.reload = true;
+                if (navigating) return;
+                this.silentReload = true;
+                this.reload = true;
               },
             });
           })
