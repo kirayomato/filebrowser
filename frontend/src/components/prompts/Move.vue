@@ -113,9 +113,26 @@ export default {
           .then(() => {
             buttons.success("move");
             this.preselect = removePrefix(items[0].to);
-            if (this.user.redirectAfterCopyMove)
-              this.$router.push({ path: this.dest });
-            else this.reload = true;
+
+            const dest = this.dest;
+            // 只有留在当前目录时才刷新列表，跳转目标目录时由路由重新拉取。
+            let navigating = false;
+
+            this.closeHovers();
+            this.showHover({
+              prompt: "transfer-destination",
+              props: {
+                dest: dest,
+                count: items.length,
+                operation: "move",
+              },
+              confirm: () => {
+                navigating = true;
+              },
+              close: () => {
+                if (!navigating) this.reload = true;
+              },
+            });
           })
           .catch((e) => {
             buttons.done("move");

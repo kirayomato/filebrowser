@@ -20,6 +20,7 @@ import Download from "./Download.vue";
 import Rename from "./Rename.vue";
 import Move from "./Move.vue";
 import Copy from "./Copy.vue";
+import TransferDestination from "./TransferDestination.vue";
 import NewFile from "./NewFile.vue";
 import NewDir from "./NewDir.vue";
 import Replace from "./Replace.vue";
@@ -41,6 +42,7 @@ const components = new Map<string, any>([
   ["rename", Rename],
   ["move", Move],
   ["copy", Copy],
+  ["transfer-destination", TransferDestination],
   ["newFile", NewFile],
   ["newDir", NewDir],
   ["download", Download],

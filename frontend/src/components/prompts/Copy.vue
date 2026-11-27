@@ -114,8 +114,17 @@ export default {
               return;
             }
 
-            if (this.user.redirectAfterCopyMove)
-              this.$router.push({ path: this.dest });
+            const dest = this.dest;
+
+            this.closeHovers();
+            this.showHover({
+              prompt: "transfer-destination",
+              props: {
+                dest: dest,
+                count: items.length,
+                operation: "copy",
+              },
+            });
           })
           .catch((e) => {
             buttons.done("copy");
